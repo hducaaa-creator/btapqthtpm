@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  # 1. Web Quiz App
+  app:
+    build: .
+    container_name: quiz_app
+    restart: always
+    environment:
+      - DB_HOST=db
+      - DB_USER=quizuser
+      - DB_PASSWORD=quizpassword
+      - DB_NAME=quiz_db
+    depends_on:
+      - db
+    networks:
+      - app_network
+
+  # 2. Database MySQL
+  db:
+    image: mysql:8.0
+    container_name: quiz_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: quiz_db
+      MYSQL_USER: quizuser
+      MYSQL_PASSWORD: quizpassword
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - app_network
+
+  # 3. phpMyAdmin
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: quiz_phpmyadmin
+    restart: always
+    environment:
+      PMA_HOST: db
+    depends_on:
+      - db
+    networks:
+      - app_network
+
+  # 4. Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: quiz_nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - app
+      - phpmyadmin
+    networks:
+      - app_network
+
+  # 5. Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: quiz_prometheus
+    restart: always
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - app_network
+
+  # 6. Node Exporter
+  node_exporter:
+    image: prom/node-exporter:latest
+    container_name: quiz_node_exporter
+    restart: always
+    networks:
+      - app_network
+
+  # 7. Grafana Loki
+  loki:
+    image: grafana/loki:latest
+    container_name: quiz_loki
+    restart: always
+    ports:
+      - "3100:3100"
+    networks:
+      - app_network
+
+  # 8. Promtail
+  promtail:
+    image: grafana/promtail:latest
+    container_name: quiz_promtail
+    restart: always
+    volumes:
+      - ./loki/promtail-config.yml:/etc/promtail/config.yml:ro
+      - nginx_logs:/var/log/nginx:ro
+    networks:
+      - app_network
+
+  # 9. Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: quiz_grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - app_network
+
+volumes:
+  mysql_data:
+  nginx_logs:
+
+networks:
+  app_network:
+    driver: bridge
